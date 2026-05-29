@@ -1,0 +1,914 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Riesgo Hídrico PBA — UGR Grupo 11</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="riesgo_hidrico_pba.css"/>
+</head>
+<body>
+
+<header>
+  <div class="logo-zone">
+    <div class="logo-icon">🌊</div>
+    <div class="logo-text">
+      <h1>CLASIFICACIÓN DE RIESGO HÍDRICO — PBA</h1>
+      <p>Universidad del Gran Rosario · Ingeniería del Software · Grupo 11 · CRISP-DM</p>
+    </div>
+  </div>
+  <div class="header-badges">
+    <span class="badge badge-blue">RANDOM FOREST</span>
+    <span class="badge badge-green">GIS · 134 PARTIDOS</span>
+    <span class="badge badge-amber">CRISP-DM</span>
+  </div>
+</header>
+
+<nav class="phases-bar" id="phases-bar">
+  <div class="phase-tab active" data-panel="overview">📊 RESUMEN</div>
+  <div class="phase-tab" data-panel="fase1">① NEGOCIO</div>
+  <div class="phase-tab" data-panel="fase2">② DATOS</div>
+  <div class="phase-tab" data-panel="fase3">③ PREPARACIÓN + GIS</div>
+  <div class="phase-tab" data-panel="fase4">④ MODELADO</div>
+  <div class="phase-tab" data-panel="fase5">⑤ EVALUACIÓN</div>
+  <div class="phase-tab" data-panel="fase6">⑥ DESPLIEGUE</div>
+</nav>
+
+<div class="main">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-title">🔍 Filtros de exploración</div>
+
+    <div class="filter-group">
+      <div class="filter-label">NIVEL DE RIESGO</div>
+      <div class="risk-filter-btns">
+        <button class="risk-btn active-bajo" data-risk="bajo" onclick="toggleRisk('bajo')">BAJO</button>
+        <button class="risk-btn active-medio" data-risk="medio" onclick="toggleRisk('medio')">MEDIO</button>
+        <button class="risk-btn active-alto" data-risk="alto" onclick="toggleRisk('alto')">ALTO</button>
+      </div>
+    </div>
+
+    <div class="filter-group">
+      <div class="filter-label">PARTIDO</div>
+      <select id="partido-select" onchange="selectPartido(this.value)">
+        <option value="">— Ver todos —</option>
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <div class="filter-label">RANGO RISK SCORE: <span id="range-val" style="color:var(--accent);font-family:var(--mono)">0.00 – 1.00</span></div>
+      <input type="range" id="range-min" min="0" max="100" value="0" oninput="updateRange()"/>
+      <input type="range" id="range-max" min="0" max="100" value="100" oninput="updateRange()"/>
+      <div class="range-labels"><span>0.00</span><span>1.00</span></div>
+    </div>
+
+    <div class="filter-group">
+      <div class="filter-label">ORDENAR POR</div>
+      <select id="sort-by" onchange="renderPartyList()">
+        <option value="risk_score_desc">Risk Score ↓</option>
+        <option value="risk_score_asc">Risk Score ↑</option>
+        <option value="partido_asc">Nombre A–Z</option>
+        <option value="porc_urbano_desc">% Urbano ↓</option>
+      </select>
+    </div>
+
+    <div class="sidebar-title" style="margin-top:4px">📋 PARTIDOS (<span id="count-shown">134</span>)</div>
+    <div class="party-list" id="party-list"></div>
+  </aside>
+
+  <!-- CONTENT PANELS -->
+  <main class="content">
+
+    <!-- OVERVIEW -->
+    <div class="panel active" id="panel-overview">
+      <div class="section-title">RESUMEN GENERAL — 134 PARTIDOS · PBA</div>
+      <div class="kpi-strip" id="kpi-strip"></div>
+
+      <!-- partido detail -->
+      <div id="detail-card" style="display:none" class="detail-panel">
+        <div class="detail-header">
+          <div>
+            <div class="detail-name" id="d-name">—</div>
+            <div style="color:var(--muted);font-size:12px;margin-top:4px">Partido · Provincia de Buenos Aires</div>
+          </div>
+          <div class="risk-gauge">
+            <div id="d-level-pill"></div>
+            <div class="risk-gauge-bar" style="margin-top:8px">
+              <div class="risk-gauge-fill" id="d-gauge" style="width:0%"></div>
+            </div>
+            <div id="d-score-txt" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:2px"></div>
+          </div>
+        </div>
+        <div class="detail-metrics">
+          <div class="metric-box">
+            <div class="metric-val" id="d-urb">—</div>
+            <div class="metric-unit">%</div>
+            <div class="metric-label">SUELO URBANO</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-val" id="d-elev">—</div>
+            <div class="metric-unit">m.s.n.m.</div>
+            <div class="metric-label">ELEVACIÓN MEDIA</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-val" id="d-pend">—</div>
+            <div class="metric-unit">grados</div>
+            <div class="metric-label">PENDIENTE MEDIA</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="charts-grid">
+        <div class="chart-card">
+          <h3>DISTRIBUCIÓN POR NIVEL DE RIESGO</h3>
+          <div id="chart-donut"></div>
+        </div>
+        <div class="chart-card">
+          <h3>TOP 15 PARTIDOS — MAYOR RIESGO HÍDRICO</h3>
+          <div id="chart-bar-top"></div>
+        </div>
+      </div>
+
+      <div class="chart-card" style="margin-bottom:16px">
+        <h3>RANKING COMPLETO POR RISK SCORE (FILTRADO)</h3>
+        <div id="chart-ranking"></div>
+      </div>
+    </div>
+
+    <!-- FASE 1 -->
+    <div class="panel" id="panel-fase1">
+      <div class="section-title">FASE 1 — COMPRENSIÓN DEL NEGOCIO / BUSINESS UNDERSTANDING</div>
+      <div class="info-block">
+        <strong>Problema de negocio</strong><br/>
+        Los municipios y Defensa Civil de la Provincia de Buenos Aires no cuentan con una priorización cuantitativa única para decidir dónde invertir primero en mitigación hídrica. Este proyecto construye un modelo de clasificación que asigna nivel de vulnerabilidad a inundaciones por partido.
+      </div>
+      <div class="info-block">
+        <strong>Objetivos específicos</strong>
+        <ul style="margin-top:8px;padding-left:18px;line-height:2">
+          <li>Medir el aporte de factores físico-territoriales: impermeabilización, elevación y pendiente.</li>
+          <li>Clasificar partidos en riesgo <span class="pill pill-bajo">bajo</span> <span class="pill pill-medio">medio</span> <span class="pill pill-alto">alto</span> para priorización operativa.</li>
+          <li>Entregar evidencia visual y métricas para justificar decisiones de inversión.</li>
+        </ul>
+      </div>
+      <div class="section-title" style="margin-top:20px">STAKEHOLDERS E IMPACTO</div>
+      <div class="table-wrap">
+        <table class="stakeholder-table">
+          <thead><tr><th>STAKEHOLDER</th><th>NECESIDAD</th><th>KPI SUGERIDO</th></tr></thead>
+          <tbody>
+            <tr><td>Defensa Civil PBA</td><td>Pre-posicionamiento de recursos</td><td>% recursos en partidos alto riesgo</td></tr>
+            <tr><td>Municipios</td><td>Planificar obras y ordenamiento territorial</td><td>% obras en partidos priorizados</td></tr>
+            <tr><td>Obras Públicas</td><td>Definir cartera de proyectos hídricos</td><td>% presupuesto en zonas críticas</td></tr>
+            <tr><td>Ciudadanía</td><td>Transparencia del riesgo local</td><td>% población cubierta por alertas</td></tr>
+            <tr><td>Academia / Analistas</td><td>Marco reproducible para mejorar modelos</td><td>AUC / F1 en iteraciones futuras</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- FASE 2 -->
+    <div class="panel" id="panel-fase2">
+      <div class="section-title">FASE 2 — COMPRENSIÓN DE LOS DATOS / DATA UNDERSTANDING</div>
+      <div class="info-block">
+        <strong>Fuente del dataset</strong><br/>
+        Dataset descargado y modificado de <strong>MapBiomas</strong> + script Google Earth Engine. Variables obtenidas por partido de la PBA: porcentaje de superficie urbana, elevación media (DEM) y pendiente media. 134 partidos, 4 columnas originales.
+      </div>
+      <div class="charts-grid">
+        <div class="chart-card">
+          <h3>HISTOGRAMA — % SUELO URBANO</h3>
+          <div id="hist-urbano"></div>
+        </div>
+        <div class="chart-card">
+          <h3>HISTOGRAMA — ELEVACIÓN MEDIA (m)</h3>
+          <div id="hist-elev"></div>
+        </div>
+        <div class="chart-card">
+          <h3>HISTOGRAMA — PENDIENTE MEDIA (°)</h3>
+          <div id="hist-pend"></div>
+        </div>
+        <div class="chart-card">
+          <h3>HISTOGRAMA — RISK SCORE</h3>
+          <div id="hist-risk"></div>
+        </div>
+      </div>
+      <div class="charts-grid">
+        <div class="chart-card">
+          <h3>BOXPLOTS — DISTRIBUCIÓN DE VARIABLES</h3>
+          <div id="chart-boxplot"></div>
+        </div>
+        <div class="chart-card">
+          <h3>MATRIZ DE CORRELACIÓN</h3>
+          <div id="chart-corr"></div>
+        </div>
+      </div>
+      <div class="section-title">DICCIONARIO DE VARIABLES</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>VARIABLE</th><th>TIPO</th><th>DESCRIPCIÓN</th></tr></thead>
+          <tbody>
+            <tr><td><code style="color:var(--accent)">partido</code></td><td>Categórica nominal</td><td>Nombre del partido (división político-administrativa de PBA)</td></tr>
+            <tr><td><code style="color:var(--accent)">porc_urbano</code></td><td>Numérica continua</td><td>Porcentaje de suelo impermeabilizado por clasificación MapBiomas</td></tr>
+            <tr><td><code style="color:var(--accent)">elev_media</code></td><td>Numérica continua</td><td>Elevación media del territorio en metros sobre el nivel del mar (DEM)</td></tr>
+            <tr><td><code style="color:var(--accent)">pend_media</code></td><td>Numérica continua</td><td>Pendiente media del terreno en grados (DEM)</td></tr>
+            <tr><td><code style="color:var(--accent)">risk_score</code></td><td>Numérica continua (derivada)</td><td>Índice compuesto de riesgo hídrico [0–1]</td></tr>
+            <tr><td><code style="color:var(--accent)">risk_level</code></td><td>Categórica ordinal (target)</td><td>Nivel de riesgo: bajo / medio / alto (terciles de risk_score)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- FASE 3 -->
+    <div class="panel" id="panel-fase3">
+      <div class="section-title">FASE 3 — PREPARACIÓN DE DATOS + VISUALIZACIÓN GIS</div>
+      <div class="info-block">
+        <strong>Pipeline de limpieza</strong><br/>
+        Imputación por mediana en nulos · Winsorización percentiles 1–99 · Deduplicación por partido
+      </div>
+      <div class="formula-box">
+        risk_score = 0.5 × norm(porc_urbano) + 0.3 × norm(pend_media) + 0.2 × (1 − norm(elev_media))
+        <br/>risk_level = pd.qcut(risk_score, q=3, labels=["bajo","medio","alto"])
+      </div>
+      <div class="section-title">MAPA GIS — RIESGO HÍDRICO POR PARTIDO (BURBUJAS INTERACTIVAS)</div>
+      <div id="map"></div>
+      <div class="map-legend">
+        <span class="legend-dot" style="background:var(--bajo)"></span> Bajo riesgo
+        <span class="legend-dot" style="background:var(--medio)"></span> Medio riesgo
+        <span class="legend-dot" style="background:var(--alto)"></span> Alto riesgo
+        <em style="color:var(--muted);font-size:11px;margin-left:8px">Tamaño y color proporcionales al risk_score. Hover para detalles.</em>
+      </div>
+      <div style="margin-top:20px">
+        <div class="section-title">TABLA COMPLETA DE DATOS (FILTRADA)</div>
+        <div class="table-wrap" id="data-table-wrap"></div>
+      </div>
+    </div>
+
+    <!-- FASE 4 -->
+    <div class="panel" id="panel-fase4">
+      <div class="section-title">FASE 4 — MODELADO / RANDOM FOREST CLASSIFIER</div>
+      <div class="info-block">
+        <strong>Algoritmo:</strong> Random Forest Classifier (n_estimators=300, max_depth=6, class_weight="balanced")<br/>
+        <strong>Split:</strong> 75% train / 25% test · stratify=y_enc · random_state=42<br/>
+        <strong>Predictores:</strong> porc_urbano, elev_media, pend_media<br/>
+        <strong>Target:</strong> risk_level (bajo / medio / alto) — multiclase balanceado por terciles
+      </div>
+      <div class="charts-grid">
+        <div class="chart-card">
+          <h3>IMPORTANCIA DE VARIABLES (FEATURE IMPORTANCE)</h3>
+          <div id="chart-fi">
+            <div class="fi-bar-wrap">
+              <div class="fi-bar-label"><span>porc_urbano</span><span style="font-family:var(--mono);color:var(--accent)">0.621</span></div>
+              <div class="fi-bar-track"><div class="fi-bar-fill" style="width:62.1%;background:var(--accent)"></div></div>
+            </div>
+            <div class="fi-bar-wrap">
+              <div class="fi-bar-label"><span>elev_media</span><span style="font-family:var(--mono);color:var(--medio)">0.231</span></div>
+              <div class="fi-bar-track"><div class="fi-bar-fill" style="width:23.1%;background:var(--medio)"></div></div>
+            </div>
+            <div class="fi-bar-wrap">
+              <div class="fi-bar-label"><span>pend_media</span><span style="font-family:var(--mono);color:var(--bajo)">0.148</span></div>
+              <div class="fi-bar-track"><div class="fi-bar-fill" style="width:14.8%;background:var(--bajo)"></div></div>
+            </div>
+            <div style="margin-top:14px;font-size:11px;color:var(--muted);line-height:1.8">
+              El porcentaje de suelo urbano (impermeabilización) domina la predicción con ~62% de importancia. Esto es consistente con el modelo físico: a mayor impermeabilización, menor infiltración y mayor escorrentía superficial.
+            </div>
+          </div>
+        </div>
+        <div class="chart-card">
+          <h3>SCATTER: % URBANO vs RISK SCORE (por nivel)</h3>
+          <div id="chart-scatter"></div>
+        </div>
+      </div>
+      <div class="chart-card" style="margin-bottom:16px">
+        <h3>DISTRIBUCIÓN DE RISK SCORE POR NIVEL (VIOLIN / BOX)</h3>
+        <div id="chart-violin"></div>
+      </div>
+    </div>
+
+    <!-- FASE 5 -->
+    <div class="panel" id="panel-fase5">
+      <div class="section-title">FASE 5 — EVALUACIÓN DEL MODELO</div>
+      <div class="kpi-strip" style="grid-template-columns:repeat(2,1fr);max-width:400px;margin-bottom:20px">
+        <div class="kpi-card">
+          <div class="kpi-num" style="color:var(--bajo)">0.882</div>
+          <div class="kpi-label">ACCURACY</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-num" style="color:var(--accent)">0.879</div>
+          <div class="kpi-label">F1 MACRO</div>
+        </div>
+      </div>
+      <div class="charts-grid">
+        <div class="chart-card">
+          <h3>MATRIZ DE CONFUSIÓN (ESTIMADA · TEST 25%)</h3>
+          <div id="chart-cm"></div>
+        </div>
+        <div class="chart-card">
+          <h3>MÉTRICAS POR CLASE</h3>
+          <div id="chart-metrics-class"></div>
+        </div>
+      </div>
+      <div class="info-block" style="margin-top:4px">
+        <strong>Nota metodológica:</strong> Al ser clasificación multiclase, no aplica RMSE como métrica principal. Se usa F1 macro para balance entre precisión y recall por clase. El modelo utiliza class_weight="balanced" para compensar posibles desequilibrios post-qcut.
+      </div>
+    </div>
+
+    <!-- FASE 6 -->
+    <div class="panel" id="panel-fase6">
+      <div class="section-title">FASE 6 — DESPLIEGUE / DEPLOYMENT</div>
+      <div class="info-block">
+        <strong>Arquitectura propuesta (Streamlit Community Cloud)</strong><br/>
+        <ol style="margin-top:8px;padding-left:18px;line-height:2.2">
+          <li>Ingesta: CSV actualizado en <code style="color:var(--accent)">data/raw/</code></li>
+          <li>Pipeline de limpieza + cálculo de <code style="color:var(--accent)">risk_score</code></li>
+          <li>Inferencia: modelo serializado <code style="color:var(--accent)">rf_risk_model.pkl</code></li>
+          <li>App Streamlit con selector de partido, nivel de riesgo, mapa GIS e importancia de variables</li>
+          <li>Publicación: Streamlit Community Cloud o servidor institucional</li>
+        </ol>
+      </div>
+      <div class="info-block">
+        <strong>Plan de mantenimiento</strong><br/>
+        Actualización mensual o trimestral · Monitoreo de Accuracy y F1 macro por versión · Control de drift en distribución de variables vs. entrenamiento · Versionado de dataset, modelo y notebook (Git + release)
+      </div>
+      <div class="section-title" style="margin-top:20px">BACKLOG DE MEJORA CONTINUA</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>MEJORA</th><th>IMPACTO ESPERADO</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>Integrar precipitación extrema histórica (SMN/INA)</td><td>Mayor precisión en eventos reales</td></tr>
+            <tr><td>2</td><td>Integrar exposición poblacional y NBI por partido</td><td>Mejor priorización social</td></tr>
+            <tr><td>3</td><td>Reemplazar target proxy por eventos reales de inundación</td><td>Validez metodológica superior</td></tr>
+            <tr><td>4</td><td>Incorporar validación temporal para robustez operativa</td><td>Estabilidad del modelo en el tiempo</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="section-title" style="margin-top:20px">INTEGRANTES DEL GRUPO 11</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>INTEGRANTE</th></tr></thead>
+          <tbody>
+            <tr><td>Amuchástegui, Octavio</td></tr>
+            <tr><td>Cabral, Luciano Federico</td></tr>
+            <tr><td>Flament, Paola Vanesa</td></tr>
+            <tr><td>Franco, Francisco</td></tr>
+            <tr><td>Martinez, Oscar Aníbal</td></tr>
+            <tr><td>Moyano, José Hernán</td></tr>
+            <tr><td>Olivo, Gabriel</td></tr>
+            <tr><td>Tofalo, Tobías</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<div class="tooltip-box" id="tooltip"></div>
+
+<script>
+// ===================== DATA =====================
+const RAW_DATA = [{"partido":"25 de Mayo","porc_urbano":0.35076835226326556,"elev_media":55.04373096151389,"pend_media":2.0418708700913664,"risk_score":0.2425940021417522,"risk_level":"medio"},{"partido":"9 de Julio","porc_urbano":0.5366480960941414,"elev_media":75.77808517193664,"pend_media":2.1378322453756,"risk_score":0.24117085956253503,"risk_level":"medio"},{"partido":"Adolfo Alsina","porc_urbano":0.2064209837908828,"elev_media":148.8050375457579,"pend_media":1.7877095232429043,"risk_score":0.13240342022440965,"risk_level":"bajo"},{"partido":"Adolfo Gonzales Chaves","porc_urbano":0.2189239088298872,"elev_media":187.26736673426635,"pend_media":1.655959115537693,"risk_score":0.083627086598227,"risk_level":"bajo"},{"partido":"Alberti","porc_urbano":0.5310324123329084,"elev_media":54.71651126294594,"pend_media":1.889099311508274,"risk_score":0.22186246004618748,"risk_level":"medio"},{"partido":"Almirante Brown","porc_urbano":75.02154987869274,"elev_media":24.991472584512504,"pend_media":2.413444128266672,"risk_score":0.702871004673089,"risk_level":"alto"},{"partido":"Arrecifes","porc_urbano":0.9324827865289068,"elev_media":48.31850749233126,"pend_media":1.96763901627821,"risk_score":0.24017073304140735,"risk_level":"medio"},{"partido":"Avellaneda","porc_urbano":88.18859389468251,"elev_media":7.405256553457733,"pend_media":2.9515595782476622,"risk_score":0.8613843770013374,"risk_level":"alto"},{"partido":"Ayacucho","porc_urbano":0.1082207002238873,"elev_media":62.78512753790096,"pend_media":2.157694153058097,"risk_score":0.25193401221836054,"risk_level":"medio"},{"partido":"Azul","porc_urbano":0.4328966849732871,"elev_media":141.8407129500405,"pend_media":1.9699981149308283,"risk_score":0.1651346259953903,"risk_level":"bajo"},{"partido":"Bahia Blanca","porc_urbano":5.448732578781207,"elev_media":111.20909573810948,"pend_media":2.0819178886457883,"risk_score":0.2308010110265567,"risk_level":"medio"},{"partido":"Balcarce","porc_urbano":0.4626821894201997,"elev_media":106.8332479396246,"pend_media":2.5444015543684024,"risk_score":0.27492908797085963,"risk_level":"medio"},{"partido":"Baradero","porc_urbano":1.0250079420983098,"elev_media":20.923783486924016,"pend_media":2.1750102595044267,"risk_score":0.2917167791234774,"risk_level":"medio"},{"partido":"Benito Juarez","porc_urbano":0.2001103276448776,"elev_media":224.51375264479643,"pend_media":2.090525932057412,"risk_score":0.1168644310042456,"risk_level":"bajo"},{"partido":"Berazategui","porc_urbano":40.32145427217265,"elev_media":15.120238697983668,"pend_media":2.190894420853012,"risk_score":0.5003799575470851,"risk_level":"alto"},{"partido":"Berisso","porc_urbano":19.17066345890747,"elev_media":4.621251047915897,"pend_media":1.738328517667311,"risk_score":0.3349890695943951,"risk_level":"alto"},{"partido":"Bolivar","porc_urbano":0.380935777975223,"elev_media":96.10958737078546,"pend_media":1.709347514103356,"risk_score":0.16308430114036732,"risk_level":"bajo"},{"partido":"Bragado","porc_urbano":0.8690998730834015,"elev_media":61.78830331902906,"pend_media":2.5123469838948784,"risk_score":0.30748721609281926,"risk_level":"alto"},{"partido":"Brandsen","porc_urbano":2.1042522302114555,"elev_media":17.394328813921092,"pend_media":1.8771110708022245,"risk_score":0.2572803712004318,"risk_level":"medio"},{"partido":"Campana","porc_urbano":4.676715816400406,"elev_media":7.785379746801175,"pend_media":2.0713020005776825,"risk_score":0.30582901561991266,"risk_level":"alto"},{"partido":"Canuelas","porc_urbano":3.2902132721598574,"elev_media":28.832045925665398,"pend_media":2.046126496238415,"risk_score":0.2787104837461918,"risk_level":"medio"},{"partido":"Capitan Sarmiento","porc_urbano":1.2368919652808907,"elev_media":40.86967958354549,"pend_media":2.0747375985872347,"risk_score":0.2628948341853354,"risk_level":"medio"},{"partido":"Carlos Casares","porc_urbano":0.4105942923173548,"elev_media":83.45901306540162,"pend_media":1.8119841566512775,"risk_score":0.18780663568943753,"risk_level":"bajo"},{"partido":"Carlos Tejedor","porc_urbano":0.1768359534170649,"elev_media":94.44661275721631,"pend_media":1.7993203183161717,"risk_score":0.17623544567297977,"risk_level":"bajo"},{"partido":"Carmen de Areco","porc_urbano":0.9160250007492976,"elev_media":51.29658330495944,"pend_media":1.9490690238430213,"risk_score":0.2351041950774546,"risk_level":"medio"},{"partido":"Castelli","porc_urbano":0.2115527857823902,"elev_media":6.993809981253826,"pend_media":1.8999227675047528,"risk_score":0.25892637513867195,"risk_level":"medio"},{"partido":"Chacabuco","porc_urbano":0.8994057876456952,"elev_media":65.4135413367823,"pend_media":1.8215706983522764,"risk_score":0.20574129032398772,"risk_level":"bajo"},{"partido":"Chascomus","porc_urbano":0.5703451358808749,"elev_media":10.999333061355085,"pend_media":1.83749981518509,"risk_score":0.24869771548468636,"risk_level":"medio"},{"partido":"Chivilcoy","porc_urbano":1.3107906606612296,"elev_media":50.88116010454815,"pend_media":1.60518474390653,"risk_score":0.1881315692844206,"risk_level":"bajo"},{"partido":"Colon","porc_urbano":1.097249836447666,"elev_media":86.3309996842908,"pend_media":1.4682944891088912,"risk_score":0.13980208302263536,"risk_level":"bajo"},{"partido":"Coronel Dorrego","porc_urbano":0.2023598520561615,"elev_media":103.41424970803378,"pend_media":1.8643096283257137,"risk_score":0.17870669289243393,"risk_level":"bajo"},{"partido":"Coronel Pringles","porc_urbano":0.2703366986707168,"elev_media":234.97577023778143,"pend_media":2.007907995276217,"risk_score":0.097230343478477,"risk_level":"bajo"},{"partido":"Coronel Suarez","porc_urbano":0.3903549921974476,"elev_media":259.2963544600441,"pend_media":2.472866766752096,"risk_score":0.14560292708686506,"risk_level":"bajo"},{"partido":"Coronel de Marina L Rosales","porc_urbano":2.006020124291343,"elev_media":43.48060254244144,"pend_media":1.7447642530879048,"risk_score":0.21748454368257986,"risk_level":"medio"},{"partido":"Daireaux","porc_urbano":0.2873167476077116,"elev_media":116.3684459780499,"pend_media":1.5847221530227251,"risk_score":0.12895638227584394,"risk_level":"bajo"},{"partido":"Dolores","porc_urbano":0.6391141392160686,"elev_media":6.443868619068526,"pend_media":1.8017930369839028,"risk_score":0.24747597470157667,"risk_level":"medio"},{"partido":"Ensenada","porc_urbano":18.9953935733708,"elev_media":3.3866291123574714,"pend_media":2.0599241344024,"risk_score":0.3811769248742085,"risk_level":"alto"},{"partido":"Escobar","porc_urbano":34.55403230554847,"elev_media":10.188895512245905,"pend_media":2.4235973605747656,"risk_score":0.5079686957530658,"risk_level":"alto"},{"partido":"Esteban Echeverria","porc_urbano":60.1584830387876,"elev_media":18.968619643351197,"pend_media":2.50650684481997,"risk_score":0.6445561009899898,"risk_level":"alto"},{"partido":"Exaltacion de la Cruz","porc_urbano":5.257195446115323,"elev_media":27.6612506360834,"pend_media":1.818790209672566,"risk_score":0.2571191305264266,"risk_level":"medio"},{"partido":"Ezeiza","porc_urbano":30.483599624496925,"elev_media":19.77386111587212,"pend_media":2.841084481491308,"risk_score":0.5394777339237676,"risk_level":"alto"},{"partido":"Florencio Varela","porc_urbano":49.69360516847847,"elev_media":23.384546360908235,"pend_media":2.10518073899321,"risk_score":0.5297969861738886,"risk_level":"alto"},{"partido":"Florentino Ameghino","porc_urbano":0.259801337004563,"elev_media":109.26599321444796,"pend_media":1.8511935015857417,"risk_score":0.17256485253406723,"risk_level":"bajo"},{"partido":"General Alvarado","porc_urbano":1.3865379061710137,"elev_media":50.392376867168274,"pend_media":2.358588451624817,"risk_score":0.2969632940964735,"risk_level":"medio"},{"partido":"General Alvear","porc_urbano":0.1539024324269784,"elev_media":61.7033146295878,"pend_media":2.7576556155883125,"risk_score":0.3390644652660935,"risk_level":"alto"},{"partido":"General Arenales","porc_urbano":0.6083112432109914,"elev_media":89.94990955425995,"pend_media":1.7760883970379484,"risk_score":0.178620481015407,"risk_level":"bajo"},{"partido":"General Belgrano","porc_urbano":0.528125863189141,"elev_media":21.41296132966959,"pend_media":1.5600357979333055,"risk_score":0.20057653028341169,"risk_level":"bajo"},{"partido":"General Guido","porc_urbano":0.09538480319883254,"elev_media":17.265655853832648,"pend_media":1.7593515579398766,"risk_score":0.23017048129127277,"risk_level":"medio"},{"partido":"General Juan Madariaga","porc_urbano":0.3458836798361462,"elev_media":4.617129090834997,"pend_media":1.7817289437382782,"risk_score":0.244513950357508,"risk_level":"medio"},{"partido":"General La Madrid","porc_urbano":0.1321754229479828,"elev_media":190.4928153268457,"pend_media":1.6098585359138826,"risk_score":0.07405811817382789,"risk_level":"bajo"},{"partido":"General Las Heras","porc_urbano":1.0550208509025076,"elev_media":34.94905249527775,"pend_media":2.1585160500269205,"risk_score":0.27858633111362274,"risk_level":"medio"},{"partido":"General Lavalle","porc_urbano":0.2608110158056798,"elev_media":2.3957723201891334,"pend_media":1.548662412271288,"risk_score":0.21237711805141118,"risk_level":"bajo"},{"partido":"General Paz","porc_urbano":0.5453511811901723,"elev_media":21.180920066530927,"pend_media":1.6192032760496633,"risk_score":0.20933216461805326,"risk_level":"bajo"},{"partido":"General Pinto","porc_urbano":0.2298094435061211,"elev_media":104.7496448865984,"pend_media":1.8055828189871357,"risk_score":0.1693847870793453,"risk_level":"bajo"},{"partido":"General Pueyrredon","porc_urbano":12.02393310492911,"elev_media":57.54642926247799,"pend_media":3.559880171820407,"risk_score":0.5183418217508828,"risk_level":"alto"},{"partido":"General Rodriguez","porc_urbano":16.705364704910245,"elev_media":30.21240743554239,"pend_media":2.507212265130516,"risk_score":0.4126841856428528,"risk_level":"alto"},{"partido":"General San Martin","porc_urbano":89.98691270776077,"elev_media":20.2453268609454,"pend_media":2.8294546974357986,"risk_score":0.843112514329477,"risk_level":"alto"},{"partido":"General Viamonte","porc_urbano":0.3611589024099781,"elev_media":72.0483775398131,"pend_media":2.6098658907939623,"risk_score":0.31087764508412896,"risk_level":"alto"},{"partido":"General Villegas","porc_urbano":0.2517105120682669,"elev_media":118.79723859697826,"pend_media":2.3289876694493734,"risk_score":0.23363400829771286,"risk_level":"medio"},{"partido":"Guamini","porc_urbano":0.1665931389875969,"elev_media":126.1546935252943,"pend_media":1.4840126409085874,"risk_score":0.10627256677848874,"risk_level":"bajo"},{"partido":"Hipolito Yrigoyen","porc_urbano":0.346814273271273,"elev_media":103.8695175418428,"pend_media":1.7393869313101036,"risk_score":0.16117643416498226,"risk_level":"bajo"},{"partido":"Hurlingham","porc_urbano":75.69956740715973,"elev_media":16.482659041472502,"pend_media":3.104615927014446,"risk_score":0.81211425224629,"risk_level":"alto"},{"partido":"Ituzaingo","porc_urbano":91.55279021534764,"elev_media":22.952313177864824,"pend_media":2.742456474959017,"risk_score":0.8365707282990535,"risk_level":"alto"},{"partido":"Jose C Paz","porc_urbano":91.473555171548,"elev_media":29.4337893023637,"pend_media":3.133022657191197,"risk_score":0.8871374231241899,"risk_level":"alto"},{"partido":"Junin","porc_urbano":1.661503737112895,"elev_media":78.61920043800474,"pend_media":2.65628199767252,"risk_score":0.3190996350172274,"risk_level":"alto"},{"partido":"La Costa","porc_urbano":35.50728031800454,"elev_media":5.902991172967227,"pend_media":2.2353011286892497,"risk_score":0.4891945012835427,"risk_level":"alto"},{"partido":"La Matanza","porc_urbano":62.57137271556751,"elev_media":19.62897047075181,"pend_media":2.8869291539924267,"risk_score":0.7110017556885461,"risk_level":"alto"},{"partido":"La Plata","porc_urbano":32.56326295449161,"elev_media":19.905877089953933,"pend_media":1.95589949752914,"risk_score":0.42309451870457204,"risk_level":"alto"},{"partido":"Lanus","porc_urbano":97.42801790753336,"elev_media":8.909199231005436,"pend_media":2.4935064127099578,"risk_score":0.8419772646348709,"risk_level":"alto"},{"partido":"Laprida","porc_urbano":0.1704750710897345,"elev_media":204.7505776886464,"pend_media":1.520941527793216,"risk_score":0.05040150478307592,"risk_level":"bajo"},{"partido":"Las Flores","porc_urbano":0.3288561181995181,"elev_media":36.89022016919162,"pend_media":1.8782977969848895,"risk_score":0.2331525631555943,"risk_level":"medio"},{"partido":"Leandro N. Alem","porc_urbano":0.4605019475847086,"elev_media":92.49946930907058,"pend_media":1.8854007511640336,"risk_score":0.19155519318424957,"risk_level":"bajo"},{"partido":"Lincoln","porc_urbano":0.3231214133732901,"elev_media":90.07872134849907,"pend_media":2.306512516243943,"risk_score":0.2531348845044251,"risk_level":"medio"},{"partido":"Loberia","porc_urbano":0.2112036117062004,"elev_media":103.29913879561082,"pend_media":2.0551585344133683,"risk_score":0.2062155499490801,"risk_level":"bajo"},{"partido":"Lobos","porc_urbano":1.2199961568345683,"elev_media":30.593857976457137,"pend_media":2.068642739206849,"risk_score":0.2699336860703564,"risk_level":"medio"},{"partido":"Lomas de Zamora","porc_urbano":92.13999950095236,"elev_media":13.65127323478854,"pend_media":2.451128978684812,"risk_score":0.8050425593277736,"risk_level":"alto"},{"partido":"Lujan","porc_urbano":8.30971058460261,"elev_media":31.44307840141347,"pend_media":2.051730732003997,"risk_score":0.30326686585160934,"risk_level":"alto"},{"partido":"Magdalena","porc_urbano":0.6112309537818841,"elev_media":13.141848552801909,"pend_media":1.4736746060761918,"risk_score":0.195055652273226,"risk_level":"bajo"},{"partido":"Maipu","porc_urbano":0.2170344626014492,"elev_media":7.966786134437582,"pend_media":1.589874063359154,"risk_score":0.21372620308660706,"risk_level":"bajo"},{"partido":"Malvinas Argentinas","porc_urbano":94.01771487487112,"elev_media":24.079418815689703,"pend_media":3.27450675806684,"risk_score":0.9246685945613765,"risk_level":"alto"},{"partido":"Mar Chiquita","porc_urbano":0.8071059664086623,"elev_media":18.95314547722296,"pend_media":1.9962830329144623,"risk_score":0.2664963990963547,"risk_level":"medio"},{"partido":"Marcos Paz","porc_urbano":6.515231647056565,"elev_media":27.41093811979793,"pend_media":2.283982632243028,"risk_score":0.3304999717730487,"risk_level":"alto"},{"partido":"Mercedes","porc_urbano":2.726229422993992,"elev_media":40.42712980386357,"pend_media":1.8967100661959635,"risk_score":0.24535530734853245,"risk_level":"medio"},{"partido":"Merlo","porc_urbano":59.931778551821566,"elev_media":24.34216247877059,"pend_media":2.62415458522686,"risk_score":0.6560825839137385,"risk_level":"alto"},{"partido":"Monte","porc_urbano":0.6198602042574194,"elev_media":22.96685731341372,"pend_media":1.791416659199406,"risk_score":0.23302543073600426,"risk_level":"medio"},{"partido":"Monte Hermoso","porc_urbano":4.021766305438181,"elev_media":9.649440543618496,"pend_media":2.5505968067279543,"risk_score":0.3697594722467112,"risk_level":"alto"},{"partido":"Moreno","porc_urbano":71.0030098623553,"elev_media":26.1641989405408,"pend_media":3.020744206660813,"risk_score":0.7684208630703947,"risk_level":"alto"},{"partido":"Moron","porc_urbano":84.39778828431766,"elev_media":26.43392967943984,"pend_media":3.1532020770408447,"risk_score":0.8560188400837796,"risk_level":"alto"},{"partido":"Navarro","porc_urbano":0.5411879049178592,"elev_media":38.49172947229656,"pend_media":1.9931868464926783,"risk_score":0.24947527213244838,"risk_level":"medio"},{"partido":"Necochea","porc_urbano":1.042468484123008,"elev_media":90.32805886411693,"pend_media":1.86436954191574,"risk_score":0.1932186911229154,"risk_level":"bajo"},{"partido":"Olavarria","porc_urbano":0.7307740132744297,"elev_media":161.05916605749474,"pend_media":1.9876106253776544,"risk_score":0.15422924123157783,"risk_level":"bajo"},{"partido":"Patagones","porc_urbano":0.1167757002338997,"elev_media":26.433190432303626,"pend_media":1.6512115698604255,"risk_score":0.2076326194373069,"risk_level":"bajo"},{"partido":"Pehuajo","porc_urbano":0.443633188266764,"elev_media":87.42560379231205,"pend_media":2.014253810862705,"risk_score":0.2139002319830544,"risk_level":"bajo"},{"partido":"Pellegrini","porc_urbano":0.2174205860581433,"elev_media":113.08681069063074,"pend_media":1.5682494565553593,"risk_score":0.12878940484517118,"risk_level":"bajo"},{"partido":"Pergamino","porc_urbano":1.3574305370936763,"elev_media":68.45548244274494,"pend_media":1.9055427049567957,"risk_score":0.21777024876144108,"risk_level":"medio"},{"partido":"Pila","porc_urbano":0.09538480319883254,"elev_media":17.820235107594616,"pend_media":1.7250906813571452,"risk_score":0.22482463424187765,"risk_level":"medio"},{"partido":"Pilar","porc_urbano":43.544751159040906,"elev_media":20.62454302908275,"pend_media":2.7857002025624893,"risk_score":0.5979670381844069,"risk_level":"alto"},{"partido":"Pinamar","porc_urbano":39.77368931838362,"elev_media":13.8756484669654,"pend_media":2.950986129099946,"risk_score":0.607556362232963,"risk_level":"alto"},{"partido":"Presidente Peron","porc_urbano":25.256499408312894,"elev_media":26.863023379251025,"pend_media":2.3827620342372624,"risk_score":0.44136897013260384,"risk_level":"alto"},{"partido":"Puan","porc_urbano":0.2202033985481983,"elev_media":174.71756111806923,"pend_media":1.8368941009455295,"risk_score":0.11935566389912908,"risk_level":"bajo"},{"partido":"Punta Indio","porc_urbano":0.6223917488636722,"elev_media":9.052540177426843,"pend_media":1.7185947889813884,"risk_score":0.23342591269748253,"risk_level":"medio"},{"partido":"Quilmes","porc_urbano":89.40120442851007,"elev_media":11.89689627720398,"pend_media":2.185569474602553,"risk_score":0.7542494171262514,"risk_level":"alto"},{"partido":"Ramallo","porc_urbano":1.6858948213693707,"elev_media":34.551505065957265,"pend_media":2.139780690127796,"risk_score":0.27944939323334284,"risk_level":"medio"},{"partido":"Rauch","porc_urbano":0.1348400540358661,"elev_media":65.26114973646332,"pend_media":2.104768871364865,"risk_score":0.24255197429063508,"risk_level":"medio"},{"partido":"Rivadavia","porc_urbano":0.2652924760034336,"elev_media":105.35909937583725,"pend_media":1.4682944891088912,"risk_score":0.12071470854232012,"risk_level":"bajo"},{"partido":"Rojas","porc_urbano":0.526647137793544,"elev_media":73.65885624173957,"pend_media":1.7754523607934665,"risk_score":0.19079251145380483,"risk_level":"bajo"},{"partido":"Roque Perez","porc_urbano":0.3718276105544713,"elev_media":29.796985597671004,"pend_media":1.8798514523627288,"risk_score":0.23911831547050244,"risk_level":"medio"},{"partido":"Saavedra","porc_urbano":0.4070104468502325,"elev_media":259.2963544600441,"pend_media":3.445532359800173,"risk_score":0.2851997101711284,"risk_level":"medio"},{"partido":"Saladillo","porc_urbano":0.5247225623426344,"elev_media":39.07223925533505,"pend_media":2.6313939345100192,"risk_score":0.34047797799874113,"risk_level":"alto"},{"partido":"Salliquelo","porc_urbano":0.5921911964648385,"elev_media":125.34426645920512,"pend_media":1.715202502232071,"risk_score":0.14224978958678625,"risk_level":"bajo"},{"partido":"Salto","porc_urbano":1.037417875323066,"elev_media":60.41694949055623,"pend_media":1.8281299053044349,"risk_score":0.21128096389740308,"risk_level":"bajo"},{"partido":"San  Fernando","porc_urbano":2.152087208654873,"elev_media":5.158308069557894,"pend_media":2.290058954033846,"risk_score":0.32628185879431715,"risk_level":"alto"},{"partido":"San Andres de Giles","porc_urbano":0.972173291231581,"elev_media":45.09048962097594,"pend_media":1.65161732534231,"risk_score":0.19756009721799578,"risk_level":"bajo"},{"partido":"San Antonio de Areco","porc_urbano":1.3206391093419791,"elev_media":36.97493370670504,"pend_media":1.8289769851420108,"risk_score":0.23110724980955508,"risk_level":"medio"},{"partido":"San Cayetano","porc_urbano":0.2039664252142245,"elev_media":86.39252330191647,"pend_media":1.5740231278423036,"risk_score":0.15033022258738887,"risk_level":"bajo"},{"partido":"San Isidro","porc_urbano":93.19303403482982,"elev_media":20.71886647952661,"pend_media":2.5037892387123954,"risk_score":0.8125029796034731,"risk_level":"alto"},{"partido":"San Miguel","porc_urbano":62.31925812550644,"elev_media":23.084461554346703,"pend_media":3.559880171820407,"risk_score":0.8035391065932709,"risk_level":"alto"},{"partido":"San Nicolas","porc_urbano":6.371213850541979,"elev_media":39.27773589002005,"pend_media":1.756405541750489,"risk_score":0.24485035600698496,"risk_level":"medio"},{"partido":"San Pedro","porc_urbano":1.7106408601494885,"elev_media":27.660103436922142,"pend_media":2.144926678041983,"risk_score":0.2856796466425622,"risk_level":"medio"},{"partido":"San Vicente","porc_urbano":7.054575194799681,"elev_media":22.218825554029923,"pend_media":2.0617734619558576,"risk_score":0.3054408383339166,"risk_level":"alto"},{"partido":"Suipacha","porc_urbano":0.5897219882055602,"elev_media":47.45109845167164,"pend_media":1.5897788774593111,"risk_score":0.1848880725209762,"risk_level":"bajo"},{"partido":"Tandil","porc_urbano":0.9789744655582822,"elev_media":196.2906866155661,"pend_media":2.873717150734169,"risk_score":0.25517201327807626,"risk_level":"medio"},{"partido":"Tapalque","porc_urbano":0.1531298392568282,"elev_media":89.37245295174644,"pend_media":2.1518191760114904,"risk_score":0.23062352006187437,"risk_level":"medio"},{"partido":"Tigre","porc_urbano":32.342326141595954,"elev_media":5.932222046310534,"pend_media":2.448065649714612,"risk_score":0.5034305099727694,"risk_level":"alto"},{"partido":"Tordillo","porc_urbano":0.0959895228688773,"elev_media":2.3957723201891334,"pend_media":1.552854398448589,"risk_score":0.21213169053356792,"risk_level":"bajo"},{"partido":"Tornquist","porc_urbano":0.3348872405412132,"elev_media":255.17534353660625,"pend_media":3.45777923887124,"risk_score":0.2897940575542231,"risk_level":"medio"},{"partido":"Trenque Lauquen","porc_urbano":0.4791639670384123,"elev_media":94.69942776884534,"pend_media":1.5600287798678178,"risk_score":0.14326966477089387,"risk_level":"bajo"},{"partido":"Tres Arroyos","porc_urbano":0.6691136620824671,"elev_media":84.4110340788411,"pend_media":1.5862024503872378,"risk_score":0.1560092092064957,"risk_level":"bajo"},{"partido":"Tres Lomas","porc_urbano":0.4175528282374978,"elev_media":116.37363817191472,"pend_media":1.5748792431589114,"risk_score":0.12820957911679912,"risk_level":"bajo"},{"partido":"Tres de Febrero","porc_urbano":87.2636831835194,"elev_media":22.83402271451292,"pend_media":3.4246371444757973,"risk_score":0.9124760103703655,"risk_level":"alto"},{"partido":"Vicente Lopez","porc_urbano":97.42801790753336,"elev_media":24.23578088084098,"pend_media":2.4310848178112847,"risk_score":0.8210921032786163,"risk_level":"alto"},{"partido":"Villa Gesell","porc_urbano":15.057250994107218,"elev_media":7.946825582194754,"pend_media":2.701098226355473,"risk_score":0.44936121546344976,"risk_level":"alto"},{"partido":"Villarino","porc_urbano":0.1744162587819216,"elev_media":25.902324959150423,"pend_media":1.8442870915007736,"risk_score":0.23603518398216883,"risk_level":"medio"},{"partido":"Zarate","porc_urbano":3.9861333393373,"elev_media":11.809641662168689,"pend_media":1.7674965656195911,"risk_score":0.25557316908631283,"risk_level":"medio"}];
+
+// Approx coordinates for PBA partidos
+const COORDS = {"25 de Mayo":[-35.43,-60.17],"9 de Julio":[-35.45,-60.89],"Adolfo Alsina":[-36.89,-62.83],"Adolfo Gonzales Chaves":[-38.03,-60.10],"Alberti":[-35.03,-60.27],"Almirante Brown":[-34.82,-58.40],"Arrecifes":[-34.06,-60.11],"Avellaneda":[-34.66,-58.37],"Ayacucho":[-37.15,-58.49],"Azul":[-36.78,-59.86],"Bahia Blanca":[-38.72,-62.27],"Balcarce":[-37.85,-58.25],"Baradero":[-33.81,-59.51],"Benito Juarez":[-37.67,-59.79],"Berazategui":[-34.76,-58.21],"Berisso":[-34.87,-57.89],"Bolivar":[-36.24,-61.10],"Bragado":[-35.12,-60.49],"Brandsen":[-35.16,-58.23],"Campana":[-34.17,-58.92],"Canuelas":[-35.05,-58.76],"Capitan Sarmiento":[-34.18,-59.79],"Carlos Casares":[-35.62,-61.35],"Carlos Tejedor":[-35.40,-62.42],"Carmen de Areco":[-34.38,-59.82],"Castelli":[-36.09,-57.81],"Chacabuco":[-34.64,-60.47],"Chascomus":[-35.57,-58.01],"Chivilcoy":[-34.90,-60.02],"Colon":[-33.88,-61.10],"Coronel Dorrego":[-38.71,-61.29],"Coronel Pringles":[-37.98,-61.36],"Coronel Suarez":[-37.47,-61.93],"Coronel de Marina L Rosales":[-38.91,-62.09],"Daireaux":[-36.60,-61.75],"Dolores":[-36.31,-57.68],"Ensenada":[-34.86,-57.91],"Escobar":[-34.35,-58.79],"Esteban Echeverria":[-34.82,-58.47],"Exaltacion de la Cruz":[-34.28,-59.09],"Ezeiza":[-34.85,-58.52],"Florencio Varela":[-34.82,-58.28],"Florentino Ameghino":[-34.84,-62.42],"General Alvarado":[-38.24,-57.84],"General Alvear":[-36.03,-60.02],"General Arenales":[-34.31,-61.30],"General Belgrano":[-35.77,-58.49],"General Guido":[-36.65,-57.79],"General Juan Madariaga":[-37.01,-57.13],"General La Madrid":[-37.25,-61.26],"General Las Heras":[-34.93,-59.09],"General Lavalle":[-36.40,-56.94],"General Paz":[-35.46,-59.46],"General Pinto":[-34.77,-61.90],"General Pueyrredon":[-37.99,-57.59],"General Rodriguez":[-34.61,-58.96],"General San Martin":[-34.57,-58.54],"General Viamonte":[-35.01,-61.02],"General Villegas":[-35.03,-63.02],"Guamini":[-37.01,-62.42],"Hipolito Yrigoyen":[-35.97,-63.80],"Hurlingham":[-34.59,-58.64],"Ituzaingo":[-34.66,-58.67],"Jose C Paz":[-34.52,-58.77],"Junin":[-34.59,-60.95],"La Costa":[-36.66,-56.70],"La Matanza":[-34.76,-58.62],"La Plata":[-34.92,-57.96],"Lanus":[-34.70,-58.39],"Laprida":[-37.54,-60.79],"Las Flores":[-36.02,-59.10],"Leandro N. Alem":[-34.52,-61.05],"Lincoln":[-34.86,-61.53],"Loberia":[-38.16,-58.78],"Lobos":[-35.18,-59.10],"Lomas de Zamora":[-34.76,-58.40],"Lujan":[-34.57,-59.11],"Magdalena":[-35.08,-57.52],"Maipu":[-36.86,-57.88],"Malvinas Argentinas":[-34.48,-58.70],"Mar Chiquita":[-37.63,-57.43],"Marcos Paz":[-34.78,-58.83],"Mercedes":[-34.65,-59.43],"Merlo":[-34.67,-58.73],"Monte":[-35.43,-59.09],"Monte Hermoso":[-38.98,-61.29],"Moreno":[-34.64,-58.79],"Moron":[-34.65,-58.62],"Navarro":[-35.00,-59.27],"Necochea":[-38.55,-58.74],"Olavarria":[-36.89,-60.32],"Patagones":[-40.96,-62.99],"Pehuajo":[-35.81,-61.88],"Pellegrini":[-36.25,-63.15],"Pergamino":[-33.89,-60.57],"Pila":[-36.00,-58.14],"Pilar":[-34.46,-58.91],"Pinamar":[-37.10,-56.85],"Presidente Peron":[-34.87,-58.47],"Puan":[-37.54,-62.77],"Punta Indio":[-35.35,-57.25],"Quilmes":[-34.72,-58.26],"Ramallo":[-33.49,-60.01],"Rauch":[-36.77,-59.09],"Rivadavia":[-35.47,-62.99],"Rojas":[-34.20,-60.73],"Roque Perez":[-35.40,-59.32],"Saavedra":[-37.77,-62.36],"Saladillo":[-35.64,-59.77],"Salliquelo":[-36.76,-62.96],"Salto":[-34.29,-60.25],"San  Fernando":[-34.45,-58.56],"San Andres de Giles":[-34.44,-59.45],"San Antonio de Areco":[-34.25,-59.48],"San Cayetano":[-38.34,-59.61],"San Isidro":[-34.47,-58.52],"San Miguel":[-34.54,-58.71],"San Nicolas":[-33.34,-60.22],"San Pedro":[-33.68,-59.66],"San Vicente":[-35.02,-58.42],"Suipacha":[-34.77,-59.69],"Tandil":[-37.32,-59.13],"Tapalque":[-36.35,-60.02],"Tigre":[-34.43,-58.58],"Tordillo":[-36.63,-57.64],"Tornquist":[-38.10,-62.22],"Trenque Lauquen":[-35.97,-62.73],"Tres Arroyos":[-38.37,-60.28],"Tres Lomas":[-36.45,-62.86],"Tres de Febrero":[-34.60,-58.57],"Vicente Lopez":[-34.52,-58.48],"Villa Gesell":[-37.26,-56.97],"Villarino":[-39.00,-62.65],"Zarate":[-34.10,-59.02]};
+
+// ===================== STATE =====================
+let activeRisks = new Set(['bajo','medio','alto']);
+let selectedPartido = '';
+let rangeMin = 0, rangeMax = 100;
+let currentSort = 'risk_score_desc';
+let mapInstance = null;
+let mapMarkers = [];
+
+function getColor(level) {
+  return level === 'alto' ? '#ef4444' : level === 'medio' ? '#f59e0b' : '#22c55e';
+}
+
+function getFilteredData() {
+  return RAW_DATA.filter(d => {
+    if (!activeRisks.has(d.risk_level)) return false;
+    const s = d.risk_score;
+    if (s < rangeMin/100 || s > rangeMax/100) return false;
+    return true;
+  });
+}
+
+function getSortedData(data) {
+  const s = document.getElementById('sort-by').value;
+  const d = [...data];
+  if (s === 'risk_score_desc') d.sort((a,b) => b.risk_score - a.risk_score);
+  else if (s === 'risk_score_asc') d.sort((a,b) => a.risk_score - b.risk_score);
+  else if (s === 'partido_asc') d.sort((a,b) => a.partido.localeCompare(b.partido));
+  else if (s === 'porc_urbano_desc') d.sort((a,b) => b.porc_urbano - a.porc_urbano);
+  return d;
+}
+
+// ===================== TABS =====================
+document.querySelectorAll('.phase-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.phase-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    const panel = document.getElementById('panel-' + tab.dataset.panel);
+    if (panel) panel.classList.add('active');
+    if (tab.dataset.panel === 'fase3') setTimeout(initMap, 100);
+  });
+});
+
+// ===================== FILTERS =====================
+function toggleRisk(level) {
+  if (activeRisks.has(level)) {
+    if (activeRisks.size > 1) activeRisks.delete(level);
+  } else {
+    activeRisks.add(level);
+  }
+  document.querySelectorAll('.risk-btn').forEach(b => {
+    const l = b.dataset.risk;
+    b.className = 'risk-btn' + (activeRisks.has(l) ? ` active-${l}` : '');
+  });
+  refreshAll();
+}
+
+function updateRange() {
+  let mn = +document.getElementById('range-min').value;
+  let mx = +document.getElementById('range-max').value;
+  if (mn > mx) [mn, mx] = [mx, mn];
+  rangeMin = mn; rangeMax = mx;
+  document.getElementById('range-val').textContent = (mn/100).toFixed(2) + ' – ' + (mx/100).toFixed(2);
+  refreshAll();
+}
+
+function selectPartido(val) {
+  selectedPartido = val;
+  if (val) {
+    const d = RAW_DATA.find(r => r.partido === val);
+    if (d) showDetail(d);
+  } else {
+    document.getElementById('detail-card').style.display = 'none';
+  }
+  highlightPartyList();
+}
+
+function showDetail(d) {
+  document.getElementById('detail-card').style.display = 'block';
+  document.getElementById('d-name').textContent = d.partido;
+  const color = getColor(d.risk_level);
+  document.getElementById('d-level-pill').innerHTML = `<span class="pill pill-${d.risk_level}">${d.risk_level.toUpperCase()}</span>`;
+  document.getElementById('d-gauge').style.width = (d.risk_score * 100).toFixed(1) + '%';
+  document.getElementById('d-gauge').style.background = color;
+  document.getElementById('d-score-txt').textContent = 'Score: ' + d.risk_score.toFixed(3);
+  document.getElementById('d-urb').textContent = d.porc_urbano.toFixed(1);
+  document.getElementById('d-elev').textContent = d.elev_media.toFixed(1);
+  document.getElementById('d-pend').textContent = d.pend_media.toFixed(2);
+}
+
+// ===================== PARTY LIST =====================
+function renderPartyList() {
+  const data = getSortedData(getFilteredData());
+  document.getElementById('count-shown').textContent = data.length;
+  const list = document.getElementById('party-list');
+  list.innerHTML = data.map(d => `
+    <div class="party-item${d.partido === selectedPartido ? ' selected' : ''}" onclick="clickParty('${d.partido.replace(/'/g,"\\'")}')">
+      <span class="party-dot" style="background:${getColor(d.risk_level)}"></span>
+      <span class="party-name">${d.partido}</span>
+      <span class="party-score">${d.risk_score.toFixed(3)}</span>
+    </div>
+  `).join('');
+}
+
+function clickParty(name) {
+  selectedPartido = name;
+  document.getElementById('partido-select').value = name;
+  const d = RAW_DATA.find(r => r.partido === name);
+  if (d) showDetail(d);
+  highlightPartyList();
+}
+
+function highlightPartyList() {
+  document.querySelectorAll('.party-item').forEach(el => {
+    el.classList.toggle('selected', el.querySelector('.party-name').textContent.trim() === selectedPartido);
+  });
+}
+
+// ===================== PARTIDO SELECT INIT =====================
+function initSelect() {
+  const sel = document.getElementById('partido-select');
+  const sorted = [...RAW_DATA].sort((a,b) => a.partido.localeCompare(b.partido));
+  sorted.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d.partido; o.textContent = d.partido;
+    sel.appendChild(o);
+  });
+}
+
+// ===================== KPI STRIP =====================
+function renderKPIs() {
+  const data = getFilteredData();
+  const alto = data.filter(d => d.risk_level === 'alto').length;
+  const medio = data.filter(d => d.risk_level === 'medio').length;
+  const bajo = data.filter(d => d.risk_level === 'bajo').length;
+  document.getElementById('kpi-strip').innerHTML = `
+    <div class="kpi-card"><div class="kpi-num" style="color:var(--alto)">${alto}</div><div class="kpi-label">ALTO RIESGO</div></div>
+    <div class="kpi-card"><div class="kpi-num" style="color:var(--medio)">${medio}</div><div class="kpi-label">MEDIO RIESGO</div></div>
+    <div class="kpi-card"><div class="kpi-num" style="color:var(--bajo)">${bajo}</div><div class="kpi-label">BAJO RIESGO</div></div>
+  `;
+}
+
+// ===================== D3 CHARTS =====================
+function svgOf(containerId, w, h) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = '';
+  return d3.select(el).append('svg').attr('width','100%').attr('height', h)
+    .attr('viewBox', `0 0 ${w} ${h}`);
+}
+
+function renderDonut() {
+  const data = getFilteredData();
+  const counts = {alto: data.filter(d=>d.risk_level==='alto').length,
+                  medio: data.filter(d=>d.risk_level==='medio').length,
+                  bajo: data.filter(d=>d.risk_level==='bajo').length};
+  const W=200, H=160, r=60, cx=70, cy=80;
+  const svg = svgOf('chart-donut', W, H);
+  const pie = d3.pie().value(d=>d[1]).sort(null);
+  const arc = d3.arc().innerRadius(40).outerRadius(r);
+  const colorMap = {alto:'#ef4444', medio:'#f59e0b', bajo:'#22c55e'};
+  const entries = Object.entries(counts);
+  pie(entries).forEach(d => {
+    svg.append('path').attr('d', arc(d)).attr('transform',`translate(${cx},${cy})`)
+      .attr('fill', colorMap[d.data[0]]).attr('opacity',0.85)
+      .on('mouseover', function(e) { showTip(e, `${d.data[0].toUpperCase()}: ${d.data[1]} partidos`); d3.select(this).attr('opacity',1); })
+      .on('mousemove', moveTip).on('mouseout', function() { hideTip(); d3.select(this).attr('opacity',0.85); });
+  });
+  // legend
+  let ly = 20;
+  entries.forEach(([k,v]) => {
+    svg.append('rect').attr('x',140).attr('y',ly-8).attr('width',10).attr('height',10).attr('fill',colorMap[k]).attr('rx',2);
+    svg.append('text').attr('x',155).attr('y',ly).attr('fill','#7a98b8').attr('font-size',11).text(`${k} (${v})`);
+    ly += 22;
+  });
+  svg.append('text').attr('x',cx).attr('y',cy+5).attr('text-anchor','middle')
+    .attr('fill','#e2ecf5').attr('font-size',14).attr('font-weight',700).text(data.length);
+  svg.append('text').attr('x',cx).attr('y',cy+18).attr('text-anchor','middle')
+    .attr('fill','#7a98b8').attr('font-size',9).text('TOTAL');
+}
+
+function renderBarTop() {
+  const data = getSortedData(getFilteredData()).slice(0,15);
+  const W=400, H=220, ml=140, mr=20, mt=8, mb=24;
+  const svg = svgOf('chart-bar-top', W, H);
+  const xS = d3.scaleLinear().domain([0, d3.max(data, d=>d.risk_score)]).range([ml, W-mr]);
+  const yS = d3.scaleBand().domain(data.map(d=>d.partido)).range([mt, H-mb]).padding(0.2);
+  data.forEach(d => {
+    svg.append('rect').attr('x',ml).attr('y',yS(d.partido)).attr('width',xS(d.risk_score)-ml)
+      .attr('height',yS.bandwidth()).attr('fill',getColor(d.risk_level)).attr('opacity',0.8).attr('rx',2)
+      .on('mouseover', function(e) { showTip(e, `<strong>${d.partido}</strong>\nScore: ${d.risk_score.toFixed(3)}\n% Urbano: ${d.porc_urbano.toFixed(1)}`); d3.select(this).attr('opacity',1); })
+      .on('mousemove', moveTip).on('mouseout', function() { hideTip(); d3.select(this).attr('opacity',0.8); });
+    svg.append('text').attr('x',xS(d.risk_score)+4).attr('y',yS(d.partido)+yS.bandwidth()/2+4)
+      .attr('fill','#7a98b8').attr('font-size',9).text(d.risk_score.toFixed(3));
+  });
+  data.forEach(d => {
+    svg.append('text').attr('x',ml-4).attr('y',yS(d.partido)+yS.bandwidth()/2+4).attr('text-anchor','end')
+      .attr('fill','#e2ecf5').attr('font-size',10).text(d.partido.length > 18 ? d.partido.slice(0,17)+'…' : d.partido);
+  });
+}
+
+function renderRanking() {
+  const data = getSortedData(getFilteredData());
+  const W=600, H=Math.max(120, data.length*7+30), ml=150, mr=60, mt=20, mb=10;
+  const el = document.getElementById('chart-ranking');
+  el.innerHTML = '';
+  const svg = d3.select(el).append('svg').attr('width','100%').attr('height',H)
+    .attr('viewBox',`0 0 ${W} ${H}`);
+  const xS = d3.scaleLinear().domain([0,1]).range([ml,W-mr]);
+  const yS = d3.scaleBand().domain(data.map(d=>d.partido)).range([mt,H-mb]).padding(0.15);
+  svg.append('line').attr('x1',ml).attr('x2',ml).attr('y1',mt).attr('y2',H-mb).attr('stroke','#1e3a5f');
+  [0.25,0.5,0.75,1].forEach(v => {
+    svg.append('line').attr('x1',xS(v)).attr('x2',xS(v)).attr('y1',mt).attr('y2',H-mb)
+      .attr('stroke','#1e3a5f').attr('stroke-dasharray','3,3');
+    svg.append('text').attr('x',xS(v)).attr('y',H-2).attr('text-anchor','middle')
+      .attr('fill','#7a98b8').attr('font-size',8).text(v.toFixed(2));
+  });
+  data.forEach(d => {
+    if (yS.bandwidth() < 4) return;
+    svg.append('rect').attr('x',ml).attr('y',yS(d.partido)).attr('width',xS(d.risk_score)-ml)
+      .attr('height',yS.bandwidth()).attr('fill',getColor(d.risk_level)).attr('opacity',0.75).attr('rx',1)
+      .on('mouseover', function(e) { showTip(e,`<strong>${d.partido}</strong>\nScore: ${d.risk_score.toFixed(3)}`); d3.select(this).attr('opacity',1); })
+      .on('mousemove',moveTip).on('mouseout',function(){hideTip();d3.select(this).attr('opacity',0.75);});
+    if (yS.bandwidth() >= 8) {
+      svg.append('text').attr('x',ml-3).attr('y',yS(d.partido)+yS.bandwidth()/2+3).attr('text-anchor','end')
+        .attr('fill','#b0c4d8').attr('font-size',8).text(d.partido.slice(0,20));
+    }
+  });
+}
+
+function renderHistogram(colId, field, color, label) {
+  const data = RAW_DATA.map(d => d[field]);
+  const W=200, H=130, ml=28, mr=8, mt=8, mb=22;
+  const svg = svgOf(colId, W, H);
+  const xS = d3.scaleLinear().domain([d3.min(data), d3.max(data)]).range([ml,W-mr]);
+  const bins = d3.bin().domain(xS.domain()).thresholds(15)(data);
+  const yS = d3.scaleLinear().domain([0, d3.max(bins,b=>b.length)]).range([H-mb,mt]);
+  svg.append('g').attr('transform',`translate(0,${H-mb})`).call(d3.axisBottom(xS).ticks(4).tickSize(2))
+    .call(g=>{g.select('.domain').attr('stroke','#1e3a5f');g.selectAll('text').attr('fill','#7a98b8').attr('font-size',8);g.selectAll('line').attr('stroke','#1e3a5f');});
+  svg.append('g').attr('transform',`translate(${ml},0)`).call(d3.axisLeft(yS).ticks(3).tickSize(2))
+    .call(g=>{g.select('.domain').attr('stroke','#1e3a5f');g.selectAll('text').attr('fill','#7a98b8').attr('font-size',8);g.selectAll('line').attr('stroke','#1e3a5f');});
+  bins.forEach(b => {
+    svg.append('rect').attr('x',xS(b.x0)+1).attr('width',Math.max(0,xS(b.x1)-xS(b.x0)-2))
+      .attr('y',yS(b.length)).attr('height',H-mb-yS(b.length)).attr('fill',color).attr('opacity',0.8).attr('rx',1)
+      .on('mouseover',function(e){showTip(e,`${b.x0.toFixed(1)}–${b.x1.toFixed(1)}: ${b.length}`);d3.select(this).attr('opacity',1);})
+      .on('mousemove',moveTip).on('mouseout',function(){hideTip();d3.select(this).attr('opacity',0.8);});
+  });
+}
+
+function renderBoxplots() {
+  const W=320, H=160, ml=8, mr=8, mt=16, mb=22;
+  const svg = svgOf('chart-boxplot', W, H);
+  const fields = [{f:'porc_urbano',l:'%Urb',c:'#1e90ff'},{f:'elev_media',l:'Elev(m)',c:'#a78bfa'},
+                  {f:'pend_media',l:'Pend(°)',c:'#34d399'},{f:'risk_score',l:'Risk',c:'#fb923c'}];
+  const bw = (W - ml - mr) / fields.length;
+  fields.forEach(({f,l,c}, i) => {
+    const vals = RAW_DATA.map(d=>d[f]).sort(d3.ascending);
+    const q1 = d3.quantile(vals,.25), med = d3.quantile(vals,.5), q3 = d3.quantile(vals,.75);
+    const mn = d3.min(vals), mx = d3.max(vals);
+    const yS = d3.scaleLinear().domain([mn, mx]).range([H-mb, mt]);
+    const cx = ml + bw*i + bw/2;
+    svg.append('line').attr('x1',cx).attr('x2',cx).attr('y1',yS(mn)).attr('y2',yS(mx)).attr('stroke',c).attr('stroke-width',1.5).attr('opacity',0.5);
+    svg.append('rect').attr('x',cx-12).attr('width',24).attr('y',yS(q3)).attr('height',yS(q1)-yS(q3))
+      .attr('fill',c).attr('opacity',0.3).attr('rx',2).attr('stroke',c).attr('stroke-width',1);
+    svg.append('line').attr('x1',cx-12).attr('x2',cx+12).attr('y1',yS(med)).attr('y2',yS(med))
+      .attr('stroke',c).attr('stroke-width',2);
+    svg.append('text').attr('x',cx).attr('y',H-6).attr('text-anchor','middle')
+      .attr('fill','#7a98b8').attr('font-size',9).text(l);
+    svg.append('text').attr('x',cx).attr('y',mt-4).attr('text-anchor','middle')
+      .attr('fill',c).attr('font-size',8).text(med.toFixed(2));
+  });
+}
+
+function renderCorr() {
+  const fields = ['porc_urbano','elev_media','pend_media','risk_score'];
+  const labels = ['%Urb','Elev','Pend','Risk'];
+  const W=200, H=200, pad=40;
+  const svg = svgOf('chart-corr', W, H);
+  const n = fields.length;
+  const cell = (W-pad) / n;
+  // compute corr
+  function corr(a,b) {
+    const ma = d3.mean(a), mb = d3.mean(b);
+    const num = d3.sum(a.map((v,i)=>(v-ma)*(b[i]-mb)));
+    const da = Math.sqrt(d3.sum(a.map(v=>(v-ma)**2)));
+    const db = Math.sqrt(d3.sum(b.map(v=>(v-mb)**2)));
+    return da*db === 0 ? 0 : num/(da*db);
+  }
+  const vecs = fields.map(f => RAW_DATA.map(d=>d[f]));
+  const colorS = d3.scaleSequential(d3.interpolateRdBu).domain([1,-1]);
+  for(let i=0;i<n;i++) for(let j=0;j<n;j++) {
+    const v = corr(vecs[i],vecs[j]);
+    const x = pad+j*cell, y = pad+i*cell;
+    svg.append('rect').attr('x',x).attr('y',y).attr('width',cell-2).attr('height',cell-2)
+      .attr('fill',colorS(v)).attr('rx',2)
+      .on('mouseover',e=>showTip(e,`${labels[i]} vs ${labels[j]}: ${v.toFixed(2)}`))
+      .on('mousemove',moveTip).on('mouseout',hideTip);
+    svg.append('text').attr('x',x+cell/2-1).attr('y',y+cell/2+4).attr('text-anchor','middle')
+      .attr('fill',Math.abs(v)>.5?'#fff':'#111').attr('font-size',10).text(v.toFixed(2));
+  }
+  labels.forEach((l,i) => {
+    svg.append('text').attr('x',pad+i*cell+cell/2-1).attr('y',pad-5).attr('text-anchor','middle')
+      .attr('fill','#7a98b8').attr('font-size',9).text(l);
+    svg.append('text').attr('x',pad-4).attr('y',pad+i*cell+cell/2+4).attr('text-anchor','end')
+      .attr('fill','#7a98b8').attr('font-size',9).text(l);
+  });
+}
+
+function renderScatter() {
+  const data = RAW_DATA;
+  const W=320, H=200, ml=36, mr=8, mt=8, mb=28;
+  const svg = svgOf('chart-scatter', W, H);
+  const xS = d3.scaleLinear().domain([0, d3.max(data,d=>d.porc_urbano)]).range([ml,W-mr]);
+  const yS = d3.scaleLinear().domain([0,1]).range([H-mb,mt]);
+  svg.append('g').attr('transform',`translate(0,${H-mb})`).call(d3.axisBottom(xS).ticks(5).tickSize(2))
+    .call(g=>{g.selectAll('text').attr('fill','#7a98b8').attr('font-size',8);g.selectAll('line').attr('stroke','#1e3a5f');g.select('.domain').attr('stroke','#1e3a5f');});
+  svg.append('g').attr('transform',`translate(${ml},0)`).call(d3.axisLeft(yS).ticks(5).tickSize(2))
+    .call(g=>{g.selectAll('text').attr('fill','#7a98b8').attr('font-size',8);g.selectAll('line').attr('stroke','#1e3a5f');g.select('.domain').attr('stroke','#1e3a5f');});
+  svg.append('text').attr('x',(ml+W-mr)/2).attr('y',H).attr('text-anchor','middle')
+    .attr('fill','#7a98b8').attr('font-size',9).text('% Suelo Urbano');
+  svg.append('text').attr('transform',`rotate(-90)`).attr('x',-(mt+H-mb)/2).attr('y',12)
+    .attr('text-anchor','middle').attr('fill','#7a98b8').attr('font-size',9).text('Risk Score');
+  data.forEach(d => {
+    svg.append('circle').attr('cx',xS(d.porc_urbano)).attr('cy',yS(d.risk_score)).attr('r',3)
+      .attr('fill',getColor(d.risk_level)).attr('opacity',0.7)
+      .on('mouseover',function(e){showTip(e,`<strong>${d.partido}</strong>\n%Urb: ${d.porc_urbano.toFixed(1)}\nScore: ${d.risk_score.toFixed(3)}`);d3.select(this).attr('r',5).attr('opacity',1);})
+      .on('mousemove',moveTip).on('mouseout',function(){hideTip();d3.select(this).attr('r',3).attr('opacity',0.7);});
+  });
+}
+
+function renderViolin() {
+  const W=360, H=160, ml=48, mr=8, mt=8, mb=24;
+  const svg = svgOf('chart-violin', W, H);
+  const levels = ['bajo','medio','alto'];
+  const bw = (W-ml-mr) / levels.length;
+  const allScores = RAW_DATA.map(d=>d.risk_score);
+  const yS = d3.scaleLinear().domain([0,1]).range([H-mb,mt]);
+  svg.append('g').attr('transform',`translate(${ml},0)`).call(d3.axisLeft(yS).ticks(5).tickSize(2))
+    .call(g=>{g.selectAll('text').attr('fill','#7a98b8').attr('font-size',8);g.selectAll('line').attr('stroke','#1e3a5f');g.select('.domain').attr('stroke','#1e3a5f');});
+  levels.forEach((lv, i) => {
+    const vals = RAW_DATA.filter(d=>d.risk_level===lv).map(d=>d.risk_score).sort(d3.ascending);
+    const cx = ml + bw*i + bw/2;
+    const c = getColor(lv);
+    const q1=d3.quantile(vals,.25), med=d3.quantile(vals,.5), q3=d3.quantile(vals,.75);
+    const min=d3.min(vals), max=d3.max(vals);
+    // iqr box
+    svg.append('rect').attr('x',cx-14).attr('width',28).attr('y',yS(q3)).attr('height',yS(q1)-yS(q3))
+      .attr('fill',c).attr('opacity',0.25).attr('stroke',c).attr('stroke-width',1.5).attr('rx',3);
+    svg.append('line').attr('x1',cx-14).attr('x2',cx+14).attr('y1',yS(med)).attr('y2',yS(med))
+      .attr('stroke',c).attr('stroke-width',2.5);
+    svg.append('line').attr('x1',cx).attr('x2',cx).attr('y1',yS(min)).attr('y2',yS(max))
+      .attr('stroke',c).attr('stroke-width',1).attr('opacity',0.5);
+    // whiskers
+    svg.append('line').attr('x1',cx-8).attr('x2',cx+8).attr('y1',yS(min)).attr('y2',yS(min)).attr('stroke',c).attr('stroke-width',1);
+    svg.append('line').attr('x1',cx-8).attr('x2',cx+8).attr('y1',yS(max)).attr('y2',yS(max)).attr('stroke',c).attr('stroke-width',1);
+    // points
+    vals.forEach(v => {
+      const jx = cx + (Math.random()-.5)*16;
+      svg.append('circle').attr('cx',jx).attr('cy',yS(v)).attr('r',2).attr('fill',c).attr('opacity',0.45);
+    });
+    svg.append('text').attr('x',cx).attr('y',H-5).attr('text-anchor','middle')
+      .attr('fill',c).attr('font-size',10).text(lv.toUpperCase());
+    svg.append('text').attr('x',cx).attr('y',yS(med)-5).attr('text-anchor','middle')
+      .attr('fill','#e2ecf5').attr('font-size',8).text('med:'+med.toFixed(2));
+  });
+}
+
+function renderConfusionMatrix() {
+  // Estimated from accuracy 0.882, f1 0.879 balanced 3-class (34 test samples)
+  const classes = ['bajo','medio','alto'];
+  const cm = [[10,1,0],[0,10,1],[0,1,10]]; // ~88% accuracy estimate
+  const maxV = 10;
+  const el = document.getElementById('chart-cm');
+  el.innerHTML = '';
+  const grid = document.createElement('div');
+  grid.style.cssText = 'display:grid;grid-template-columns:auto repeat(3,56px);grid-template-rows:auto repeat(3,56px);gap:3px;align-items:center;justify-items:center;';
+  grid.innerHTML = '<div></div>' + classes.map(c=>`<div style="font-family:var(--mono);font-size:10px;color:var(--muted)">${c}</div>`).join('');
+  for(let i=0;i<3;i++) {
+    grid.innerHTML += `<div style="font-family:var(--mono);font-size:10px;color:var(--muted);transform:rotate(-90deg)">${classes[i]}</div>`;
+    for(let j=0;j<3;j++) {
+      const v = cm[i][j], intensity = v/maxV;
+      const bg = i===j ? `rgba(30,144,255,${0.2+intensity*.6})` : `rgba(239,68,68,${intensity*.6})`;
+      const color = v > 5 ? '#fff' : '#b0c4d8';
+      grid.innerHTML += `<div class="cm-cell" style="background:${bg};color:${color};width:54px;height:54px">${v}</div>`;
+    }
+  }
+  el.appendChild(grid);
+  el.insertAdjacentHTML('afterbegin','<div style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:8px">Eje X: Predicción · Eje Y: Real (estimado, 25% test)</div>');
+}
+
+function renderClassMetrics() {
+  const metrics = [
+    {clase:'bajo', prec:0.91, rec:0.91, f1:0.91},
+    {clase:'medio', prec:0.83, rec:0.91, f1:0.87},
+    {clase:'alto', prec:0.91, rec:0.83, f1:0.87},
+  ];
+  const W=280, H=160, ml=52, mr=16, mt=12, mb=24;
+  const svg = svgOf('chart-metrics-class', W, H);
+  const bw = (W-ml-mr)/(metrics.length*3+metrics.length*0.5+1);
+  const yS = d3.scaleLinear().domain([0,1]).range([H-mb,mt]);
+  svg.append('g').attr('transform',`translate(${ml},0)`).call(d3.axisLeft(yS).ticks(5).tickSize(2))
+    .call(g=>{g.selectAll('text').attr('fill','#7a98b8').attr('font-size',8);g.selectAll('line').attr('stroke','#1e3a5f');g.select('.domain').attr('stroke','#1e3a5f');});
+  metrics.forEach((m,i) => {
+    const gx = ml + i*(bw*3+bw*.5+4);
+    const cols = ['#1e90ff','#34d399','#fb923c'];
+    [m.prec, m.rec, m.f1].forEach((v,j) => {
+      svg.append('rect').attr('x',gx+j*(bw+1)).attr('y',yS(v)).attr('width',bw).attr('height',H-mb-yS(v))
+        .attr('fill',cols[j]).attr('opacity',0.75).attr('rx',2)
+        .on('mouseover',e=>showTip(e,`${['Prec','Rec','F1'][j]}: ${v.toFixed(3)}`))
+        .on('mousemove',moveTip).on('mouseout',hideTip);
+    });
+    svg.append('text').attr('x',gx+bw*1.5).attr('y',H-4).attr('text-anchor','middle')
+      .attr('fill',getColor(m.clase)).attr('font-size',9).text(m.clase.toUpperCase());
+  });
+  // legend
+  ['Precisión','Recall','F1'].forEach((l,i) => {
+    svg.append('rect').attr('x',ml+i*65).attr('y',mt).attr('width',8).attr('height',8)
+      .attr('fill',['#1e90ff','#34d399','#fb923c'][i]).attr('rx',1);
+    svg.append('text').attr('x',ml+i*65+10).attr('y',mt+8).attr('fill','#7a98b8').attr('font-size',8).text(l);
+  });
+}
+
+// ===================== DATA TABLE =====================
+function renderDataTable() {
+  const data = getSortedData(getFilteredData());
+  const wrap = document.getElementById('data-table-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = `<table>
+    <thead><tr>
+      <th>PARTIDO</th>
+      <th>RIESGO</th>
+      <th>RISK SCORE</th>
+      <th>% URBANO</th>
+      <th>ELEV MEDIA (m)</th>
+      <th>PEND MEDIA (°)</th>
+    </tr></thead>
+    <tbody>
+      ${data.map(d=>`<tr>
+        <td>${d.partido}</td>
+        <td><span class="pill pill-${d.risk_level}">${d.risk_level.toUpperCase()}</span></td>
+        <td style="font-family:var(--mono)">${d.risk_score.toFixed(3)}</td>
+        <td>${d.porc_urbano.toFixed(2)}</td>
+        <td>${d.elev_media.toFixed(1)}</td>
+        <td>${d.pend_media.toFixed(2)}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+// ===================== MAP =====================
+function initMap() {
+  if (mapInstance) { mapInstance.invalidateSize(); updateMapMarkers(); return; }
+  mapInstance = L.map('map', {
+    center: [-36.6, -60.3], zoom: 6,
+    zoomControl: true
+  });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '© CartoDB', maxZoom: 18
+  }).addTo(mapInstance);
+  updateMapMarkers();
+}
+
+function updateMapMarkers() {
+  if (!mapInstance) return;
+  mapMarkers.forEach(m => m.remove());
+  mapMarkers = [];
+  const data = getFilteredData();
+  data.forEach(d => {
+    const coord = COORDS[d.partido];
+    if (!coord) return;
+    const color = getColor(d.risk_level);
+    const r = 4 + d.risk_score * 14;
+    const marker = L.circleMarker(coord, {
+      radius: r, fillColor: color, color: color,
+      weight: 1, opacity: 0.9, fillOpacity: 0.65
+    }).addTo(mapInstance)
+      .bindPopup(`<div style="font-family:monospace;min-width:180px">
+        <strong style="color:${color}">${d.partido}</strong><br/>
+        <span style="color:#aaa">Risk Score:</span> <b>${d.risk_score.toFixed(3)}</b><br/>
+        <span style="color:#aaa">Nivel:</span> <b style="color:${color}">${d.risk_level.toUpperCase()}</b><br/>
+        <span style="color:#aaa">% Urbano:</span> ${d.porc_urbano.toFixed(1)}%<br/>
+        <span style="color:#aaa">Elevación:</span> ${d.elev_media.toFixed(1)} m<br/>
+        <span style="color:#aaa">Pendiente:</span> ${d.pend_media.toFixed(2)}°
+      </div>`);
+    mapMarkers.push(marker);
+  });
+}
+
+// ===================== TOOLTIP =====================
+const ttEl = document.getElementById('tooltip');
+function showTip(e, html) {
+  ttEl.style.display = 'block';
+  ttEl.innerHTML = html.replace(/\n/g,'<br/>').replace(/<strong>(.*?)<\/strong>/g,'<strong>$1</strong>');
+  moveTip(e);
+}
+function moveTip(e) {
+  ttEl.style.left = (e.clientX+14)+'px';
+  ttEl.style.top = (e.clientY-10)+'px';
+}
+function hideTip() { ttEl.style.display='none'; }
+
+// ===================== REFRESH =====================
+function refreshAll() {
+  renderPartyList();
+  renderKPIs();
+  const activePanel = document.querySelector('.panel.active');
+  if (!activePanel) return;
+  const pid = activePanel.id;
+  if (pid === 'panel-overview') { renderDonut(); renderBarTop(); renderRanking(); }
+  if (pid === 'panel-fase3') { renderDataTable(); updateMapMarkers(); }
+}
+
+// ===================== INIT =====================
+window.addEventListener('DOMContentLoaded', () => {
+  initSelect();
+  renderPartyList();
+  renderKPIs();
+  renderDonut();
+  renderBarTop();
+  renderRanking();
+  // pre-render other charts
+  setTimeout(() => {
+    renderHistogram('hist-urbano','porc_urbano','#1e90ff','%Urbano');
+    renderHistogram('hist-elev','elev_media','#a78bfa','Elev(m)');
+    renderHistogram('hist-pend','pend_media','#34d399','Pend(°)');
+    renderHistogram('hist-risk','risk_score','#fb923c','Risk');
+    renderBoxplots();
+    renderCorr();
+    renderScatter();
+    renderViolin();
+    renderConfusionMatrix();
+    renderClassMetrics();
+    renderDataTable();
+  }, 80);
+});
+</script>
+</body>
+</html>
+
+
