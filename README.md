@@ -1,4 +1,4 @@
-# UGR_IdS_TP_GRUPO_11
+# Universidad del Gran Rosario · Ingeniería del Software · Grupo 11 · CRISP-DM
 
 ## Docentes
 
